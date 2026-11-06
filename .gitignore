@@ -1,0 +1,16 @@
+node_modules/
+.next/
+out/
+dist/
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.tsbuildinfo
+.env
+.env.local
+.env.*.local
+!.env.example
+backend/.env
+.sites-runtime/
+*.tar.gz
