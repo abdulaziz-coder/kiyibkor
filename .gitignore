@@ -7,6 +7,7 @@ __pycache__/
 .pytest_cache/
 *.pyc
 *.tsbuildinfo
+public/mediapipe/
 .env
 .env.local
 .env.*.local

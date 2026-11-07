@@ -5,11 +5,18 @@ Uzbekistan-first virtual fitting studio. Uzbek is the default language, with Eng
 ## Stack
 
 - Next.js App Router + React + TypeScript; Tailwind CSS v4 for the layout.
+- Three.js for volumetric garments; MediaPipe Pose Landmarker for on-device body tracking.
 - FastAPI + Pillow for server-side 2D garment compositing.
 - PostgreSQL + SQLAlchemy for saved look metadata.
 - Cloudinary for saved look images. Credentials stay on the Python server.
 
-This version uses **2D overlays**, not generative AI or automatic body tracking. Camera frames and photos stay in the browser until the visitor explicitly saves a look to the cloud. The render endpoint can also compose an image without retaining either input. Garment uploads should be transparent PNGs; opaque backgrounds are not automatically removed.
+The default **3D AR mode** automatically positions and deforms a procedural torso and sleeves using detected shoulders, hips, elbows, wrists and landmark depth. Lighting gives the garments volume; a rotating demo is available without camera access. Switching to 2D keeps automatic body alignment. Uploaded garment photos remain 2D (a photo does not contain a 3D garment mesh).
+
+Camera frames, body landmarks and photos are processed on-device and stay in the browser until the visitor explicitly saves a look to the cloud. Tracking is throttled to roughly 12 FPS; rendering runs independently. No body means no floating garment in automatic mode. Turn off automatic fitting to use manual position/size/rotation controls. Shoulders and hips must be visible; low light, occlusion, cropped bodies and side views reduce accuracy.
+
+This is an approximate AR preview, **not fabric physics, body scanning, a size guarantee, or generative photorealistic try-on**. Built-in garments are procedural volumes, not measured patterns or digitized products. Hands and hair are not segmented for front-of-garment occlusion. The existing Python `/api/try-on` endpoint remains 2D; 3D rendering runs in the browser and saved cloud images are flattened snapshots. Garment uploads should be transparent PNGs; opaque backgrounds are not automatically removed.
+
+`postinstall` runs `scripts/prepare-assets.mjs`: it copies the installed MediaPipe WASM runtime and downloads Google's version-1 Pose Landmarker Lite model to ignored `public/mediapipe/`. These files are served locally, not from a CDN at runtime. Rerun that script if downloads were unavailable during installation. See [Google's model documentation](https://developers.google.com/edge/mediapipe/solutions/vision/pose_landmarker) and [MediaPipe source/license](https://github.com/google-ai-edge/mediapipe).
 
 ## Frontend
 
@@ -64,6 +71,7 @@ The 2D renderer shares the browser's coordinates: width `470 * size / 100`, heig
 
 ```powershell
 npm run typecheck
+npm test
 npm run build
 Push-Location backend
 ../.venv/Scripts/python.exe -m pytest -q
