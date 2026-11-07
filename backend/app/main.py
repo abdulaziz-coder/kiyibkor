@@ -4,6 +4,9 @@ from io import BytesIO
 import re
 import uuid
 import logging
+import asyncio
+import base64
+import httpx
 import cloudinary
 import cloudinary.uploader
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
@@ -67,7 +70,69 @@ def health():
             ready = True
         except Exception:
             log.warning('Database readiness check failed.')
-    return {'status': 'ok', 'try_on_mode': '2d', 'storage_ready': ready}
+    return {'status': 'ok', 'try_on_mode': 'ai-photo', 'ai_tryon_ready': settings().ai_tryon_configured, 'storage_ready': ready}
+
+@app.post('/api/try-on/ai')
+async def ai_try_on(person: UploadFile = File(...), garment: UploadFile = File(...),
+                    consent: bool = Form(...), category: str = Form('auto')):
+    cfg = settings()
+    if not cfg.ai_tryon_configured:
+        raise HTTPException(503, 'AI try-on is not configured yet. Add FASHN_API_KEY to backend/.env.')
+    if not consent:
+        raise HTTPException(400, 'Consent is required before sending photos to the AI try-on provider.')
+    if category not in {'auto', 'tops', 'bottoms', 'one-pieces'}:
+        raise HTTPException(422, 'Choose a supported garment category.')
+    person_image = await read_image(person)
+    garment_image = await read_image(garment)
+    model_data = 'data:image/png;base64,' + base64.b64encode(await run_in_threadpool(png, person_image)).decode()
+    garment_data = 'data:image/png;base64,' + base64.b64encode(await run_in_threadpool(png, garment_image)).decode()
+    headers = {'Authorization': f'Bearer {cfg.fashn_api_key}'}
+    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0), follow_redirects=False) as client:
+        try:
+            started = await client.post('https://api.fashn.ai/v1/run', headers=headers, json={
+                'model_name': 'tryon-v1.6',
+                'inputs': {'model_image': model_data, 'garment_image': garment_data,
+                           'category': category, 'garment_photo_type': 'auto', 'mode': 'quality',
+                           'num_samples': 1, 'output_format': 'png', 'moderation_level': 'conservative'}})
+        except httpx.HTTPError as exc:
+            raise HTTPException(502, 'Could not reach the AI try-on provider.') from exc
+        if started.status_code >= 400:
+            raise HTTPException(502, 'AI provider rejected the request. Check the API key and account credits.')
+        prediction_id = started.json().get('id')
+        if not isinstance(prediction_id, str):
+            raise HTTPException(502, 'AI provider returned an invalid job.')
+        for _ in range(36):
+            await asyncio.sleep(2)
+            try:
+                polled = await client.get(f'https://api.fashn.ai/v1/status/{prediction_id}', headers=headers)
+            except httpx.HTTPError as exc:
+                raise HTTPException(502, 'Lost connection while checking the AI result.') from exc
+            if polled.status_code >= 400:
+                raise HTTPException(502, 'Could not retrieve the AI try-on result.')
+            result = polled.json()
+            if result.get('status') == 'failed':
+                raise HTTPException(422, 'AI could not fit this garment. Try clear, front-facing photos with the full garment visible.')
+            if result.get('status') == 'completed':
+                outputs = result.get('output')
+                if not isinstance(outputs, list) or not outputs or not isinstance(outputs[0], str):
+                    raise HTTPException(502, 'AI provider did not return an image.')
+                output_url = httpx.URL(outputs[0])
+                if output_url.scheme != 'https' or output_url.host not in {'cdn.fashn.ai', 'media.fashn.ai'}:
+                    raise HTTPException(502, 'AI provider returned an unexpected result URL.')
+                try:
+                    generated = await client.get(output_url)
+                    generated.raise_for_status()
+                except httpx.HTTPError as exc:
+                    raise HTTPException(502, 'Could not download the generated image.') from exc
+                if len(generated.content) > cfg.max_upload_bytes:
+                    raise HTTPException(502, 'Generated image exceeded the download limit.')
+                try:
+                    output = await run_in_threadpool(decode_image, generated.content)
+                except ValueError as exc:
+                    raise HTTPException(502, 'AI provider returned an invalid image.') from exc
+                return Response(await run_in_threadpool(png, output), media_type='image/png',
+                                headers={'Cache-Control': 'no-store'})
+        raise HTTPException(504, 'AI try-on took too long. Please try again.')
 
 @app.post('/api/try-on')
 async def try_on(person: UploadFile = File(...), garment: UploadFile = File(...), transform: str = Form('{}')):
