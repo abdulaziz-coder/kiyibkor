@@ -5,12 +5,12 @@ Uzbekistan-first virtual fitting studio. Uzbek is the default language, with Eng
 ## Stack
 
 - Next.js App Router + React + TypeScript; Tailwind CSS v4 for the layout.
-- FASHN AI Virtual Try-On v1.6 for photo based garment generation; MediaPipe provides optional on-device live body guidance.
+- Hugging Face ZeroGPU Space running Leffa for photo based try-on; MediaPipe provides optional on-device live body guidance.
 - FastAPI + Pillow for server-side 2D garment compositing.
 - PostgreSQL + SQLAlchemy for saved look metadata.
 - Cloudinary for saved look images. Credentials stay on the Python server.
 
-The main try-on flow combines a person photo and a real garment photo with FASHN Virtual Try-On v1.6. The AI runs only after the visitor checks the disclosure and requests a generation. The API key stays on FastAPI. Each generation requests one result and costs one FASHN credit. Both input images are sent to FASHN; generated images are returned directly to the browser and are not stored in Cloudinary by this flow. FASHN returns generated CDN images for three days; Kiyib Kor downloads the result and returns it without caching.
+The main try-on flow combines a person photo and a real garment photo with the public `monk7/vtryon-a` Hugging Face Space running Leffa. Both photos are sent to that third-party Space only after the visitor checks the disclosure and generates a result. This route does not save inputs or outputs to Cloudinary or PostgreSQL. The Space is free and anonymous, with limited ZeroGPU capacity (its README estimates about 8–12 generations per anonymous caller per day); capacity is shared and may queue or become unavailable. It has no service-level guarantee.
 
 Camera frames, body landmarks and photos are processed on-device and stay in the browser until the visitor explicitly saves a look to the cloud. Tracking is throttled to roughly 12 FPS; rendering runs independently. No body means no floating garment in automatic mode. Turn off automatic fitting to use manual position/size/rotation controls. Shoulders and hips must be visible; low light, occlusion, cropped bodies and side views reduce accuracy.
 
@@ -38,7 +38,7 @@ python -m venv .venv
 Copy-Item backend/.env.example backend/.env
 ```
 
-Set a FASHN API key in `backend/.env` to enable AI generation. Get a key from the [FASHN dashboard](https://app.fashn.ai/). Add Cloudinary credentials if you also want to save results to your account. With Docker installed:
+AI generation uses the default public Leffa Space and requires no API key or paid balance. Set `VTON_SPACE_URL` in `backend/.env` only if you operate a compatible Space. Add Cloudinary credentials if you also want to save results to your account. Before commercial launch, review the model and parser licenses and the Space operator’s terms. With Docker installed:
 
 ```powershell
 docker compose up --build
@@ -51,7 +51,7 @@ This starts PostgreSQL and FastAPI, initializes the tables, and persists Postgre
 ../.venv/Scripts/python.exe -m uvicorn app.main:app --reload --port 8000
 ```
 
-API docs: http://localhost:8000/docs. Configure `CORS_ORIGINS` with the exact frontend origins. Set `NEXT_PUBLIC_API_URL` to this FastAPI origin in the frontend build. Deploy the API container on a Python/container host; the current Sites host serves only the exported frontend. Never put `FASHN_API_KEY` in a frontend `NEXT_PUBLIC_` variable.
+API docs: http://localhost:8000/docs. Configure `CORS_ORIGINS` with the exact frontend origins. Set `NEXT_PUBLIC_API_URL` to this FastAPI origin in the frontend build. Deploy the API container on a Python/container host; the current Sites host serves only the exported frontend. Do not put provider credentials in frontend `NEXT_PUBLIC_` variables.
 
 ## API
 
@@ -59,7 +59,7 @@ API docs: http://localhost:8000/docs. Configure `CORS_ORIGINS` with the exact fr
 |---|---|
 | `GET /health` | API status and storage readiness |
 | `POST /api/try-on` | Multipart `person`, transparent `garment`, JSON `transform`; returns an 800×1000 PNG |
-| `POST /api/try-on/ai` | Multipart `person`, `garment`, `category`, and `consent`; sends both photos to FASHN only after explicit consent; returns one generated PNG |
+| `POST /api/try-on/ai` | Multipart `person`, `garment`, `category`, and `consent`; sends both photos to the public Hugging Face Space only after explicit consent; returns one generated PNG |
 | `POST /api/looks` | Multipart `image`, `garment_id`, `transform`; uploads to Cloudinary and records metadata in PostgreSQL |
 | `GET /api/looks` | Latest 50 looks for the browser session |
 | `DELETE /api/looks/{id}` | Deletes that session's look and Cloudinary image |

@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     cloudinary_cloud_name: str = ''
     cloudinary_api_key: str = ''
     cloudinary_api_secret: str = ''
-    fashn_api_key: str = ''
+    vton_space_url: str = 'https://monk7-vtryon-a.hf.space'
     cors_origins: list[str] = ['http://localhost:3000']
     max_upload_bytes: int = 10 * 1024 * 1024
 
@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     @property
     def ai_tryon_configured(self) -> bool:
-        return bool(self.fashn_api_key)
+        return bool(self.vton_space_url)
 
 @lru_cache
 def settings() -> Settings:
